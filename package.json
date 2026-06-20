@@ -1,0 +1,73 @@
+{
+  "name": "qaagent-pro",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Deterministic, local-first TypeScript and Playwright QA framework for Zybra CRM.",
+  "keywords": [
+    "qa",
+    "quality-assurance",
+    "playwright",
+    "typescript",
+    "test-automation",
+    "crm-testing",
+    "agentic-testing",
+    "excel-report",
+    "e2e-testing",
+    "risk-based-testing"
+  ],
+  "homepage": "https://github.com/BAKUGOS1/QaAgent-Pro#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BAKUGOS1/QaAgent-Pro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BAKUGOS1/QaAgent-Pro/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "qa": "tsx src/cli/index.ts",
+    "qa:blueprint": "npm run qa -- --mode blueprint",
+    "qa:smoke": "npm run qa -- --mode smoke",
+    "qa:leads": "tsx src/cli/leads.ts",
+    "qa:refresh": "tsx src/cli/leads.ts --refresh-only",
+    "qa:ux": "npm run qa -- --mode ux",
+    "qa:regression": "npm run qa -- --mode regression",
+    "qa:full-destructive": "npm run qa -- --mode full-destructive",
+    "qa:mission": "tsx src/cli/mission.ts",
+    "auth:setup": "playwright test --project=auth",
+    "config:check": "tsx src/cli/config-check.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test:unit": "vitest run --coverage",
+    "test:workbook": "vitest run tests/unit/workbook.test.ts",
+    "test:discovery": "playwright test --list",
+    "report:sample": "tsx scripts/generate-sample-report.ts",
+    "verify:inputs": "tsx scripts/verify-product-inputs.ts",
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
+    "quality:gate": "tsx scripts/quality-gate.ts"
+  },
+  "dependencies": {
+    "commander": "^14.0.2",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "zod": "^4.2.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^4.0.16",
+    "eslint": "^9.39.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.0",
+    "vitest": "^4.0.16"
+  }
+}

@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose a deterministic QA capability
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: QA problem
+      description: What testing problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed deterministic behavior
+      description: Include safety boundaries, evidence requirements, and expected output.
+    validations:
+      required: true

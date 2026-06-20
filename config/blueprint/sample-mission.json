@@ -1,0 +1,51 @@
+{
+  "id": "MISSION-LEADS-READONLY",
+  "title": "Review Leads table quality without mutation",
+  "module": "Leads",
+  "charter": "Explore the Leads table as a sales user to discover conformance, usability, persistence, and performance risks without changing CRM data.",
+  "persona": "Sales user",
+  "timeboxMinutes": 45,
+  "heuristics": [
+    "checklist",
+    "consistency",
+    "accessibility",
+    "performance"
+  ],
+  "oracles": [
+    "ui",
+    "console",
+    "blueprint",
+    "accessibility",
+    "performance"
+  ],
+  "risks": [
+    {
+      "id": "R-LEADS-VISIBILITY",
+      "description": "Primary Leads controls are missing or undiscoverable.",
+      "likelihood": 3,
+      "impact": 4,
+      "evidence": [
+        "Confirmed CRM blueprint controls"
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "STEP-001",
+      "phase": "given",
+      "instruction": "An authenticated dedicated QA account is on the Leads page."
+    },
+    {
+      "id": "STEP-002",
+      "phase": "when",
+      "instruction": "Capture the visible Leads controls and table state.",
+      "actionRef": "leads.observe-table"
+    },
+    {
+      "id": "STEP-003",
+      "phase": "then",
+      "instruction": "Compare observed controls with confirmed requirements.",
+      "expected": "Every difference is classified as a feature gap or product-confirmation item."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+node_modules/
+coverage/
+.env
+.env.*
+!.env.example
+.auth/*
+!.auth/.gitkeep
+artifacts/reports/*
+artifacts/screenshots/*
+artifacts/traces/*
+artifacts/logs/*
+artifacts/state/*
+!artifacts/**/.gitkeep
+playwright-report/
+test-results/
+*.log
+.DS_Store
