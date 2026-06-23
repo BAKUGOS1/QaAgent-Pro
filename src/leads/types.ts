@@ -1,4 +1,5 @@
 import type { BrowserEvidence } from "../browser/evidence-recorder.js";
+import type { MatchedNetworkEvidence } from "../browser/network-match.js";
 import type { OracleEvidence, ReleaseVerdict, VerificationResult } from "../human-qa/types.js";
 
 export type ScenarioStatus = "Pass" | "Fail" | "Blocked" | "Needs Product Confirmation" | "Not Applicable";
@@ -22,7 +23,15 @@ export interface ActionEvidenceScope {
   endedAt: string;
   durationMs: number;
   browser: BrowserEvidence;
+  tracePath?: string;
+  matchedNetwork?: MatchedNetworkEvidence[];
+  validationMessages?: string[];
   screenshotPath?: string;
+}
+
+export interface ScenarioDependency {
+  scenarioId: string;
+  reason: string;
 }
 
 export interface ScenarioExecutionResult {
@@ -39,6 +48,7 @@ export interface ScenarioExecutionResult {
   verification: VerificationResult;
   riskScore: number;
   releaseImpact: string;
+  dependency?: ScenarioDependency;
 }
 
 export interface OriginalEntitySnapshot {
@@ -84,3 +94,8 @@ export interface LeadFixture {
   email: string;
   value: string;
 }
+
+export type LeadSaveUiOutcome =
+  | { state: "closed"; validationMessages: string[] }
+  | { state: "validation-visible"; validationMessages: string[] }
+  | { state: "still-open"; validationMessages: string[] };

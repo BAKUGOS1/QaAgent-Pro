@@ -4,6 +4,7 @@ import { chromium, type BrowserContext, type Page } from "playwright";
 import { loadConfig } from "../config/load.js";
 import { evaluateEnvironment } from "../safety/environment-guard.js";
 import { EvidenceRecorder } from "../browser/evidence-recorder.js";
+import { captureActionNetwork, networkEvidenceSucceeded, type ExpectedNetworkAction, type MatchedNetworkEvidence } from "../browser/network-match.js";
 import { environmentObservationPath, authStatePath, ensureBrowserDirectories } from "../browser/session.js";
 import { verifyExecution } from "../human-qa/defect-verifier.js";
 import { judgeRelease } from "../human-qa/release-judge.js";
@@ -11,6 +12,7 @@ import { leadsBlueprintRequirements } from "../blueprint/leads-blueprint.js";
 import { createLeadFixture } from "../data/lead-fixture.js";
 import { LeadsPage } from "../pages/leads-page.js";
 import { leadsScenarios, type LeadsScenarioDefinition } from "./scenarios.js";
+import { dependsOnCreatedLeadFixture } from "./dependencies.js";
 import { EntityRegistry } from "./entity-registry.js";
 import type {
   ActionEvidenceScope,
@@ -21,6 +23,7 @@ import type {
 } from "./types.js";
 import type { OracleEvidence, OracleName } from "../human-qa/types.js";
 import { writeLeadsWorkbook } from "../reporting/leads-workbook.js";
+import { redactText } from "../shared/redaction.js";
 
 interface RunnerState {
   page: Page;
@@ -33,7 +36,10 @@ interface RunnerState {
   registry: EntityRegistry;
   access: "read-only" | "mutation-allowed";
   screenshotDir: string;
+  tracePath: string;
   baseUrl: string;
+  secrets: string[];
+  fixtureCreateFailure?: ScenarioExecutionResult;
 }
 
 interface ScenarioOutcome {
@@ -44,6 +50,9 @@ interface ScenarioOutcome {
   expected?: string;
   oracles: OracleEvidence[];
   releaseImpact?: string;
+  matchedNetwork?: MatchedNetworkEvidence[];
+  validationMessages?: string[];
+  dependency?: ScenarioExecutionResult["dependency"];
 }
 
 export async function runLeadsMvp(options: { headed?: boolean; refreshOnly?: boolean } = {}): Promise<LeadsRunReport> {
@@ -55,6 +64,7 @@ export async function runLeadsMvp(options: { headed?: boolean; refreshOnly?: boo
   const runId = `QAP-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
   const reportPath = path.join(process.cwd(), "artifacts", "reports", `${runId}-leads.xlsx`);
   const screenshotDir = path.join(process.cwd(), "artifacts", "screenshots", runId);
+  const tracePath = path.join(process.cwd(), "artifacts", "traces", `${runId}.zip`);
   fs.mkdirSync(screenshotDir, { recursive: true });
   const browser = await chromium.launch({ headless: options.headed ? false : config.HEADLESS });
   const context = await browser.newContext({
@@ -80,7 +90,9 @@ export async function runLeadsMvp(options: { headed?: boolean; refreshOnly?: boo
     registry,
     access: environment.access,
     screenshotDir,
-    baseUrl: config.CRM_BASE_URL
+    tracePath,
+    baseUrl: config.CRM_BASE_URL,
+    secrets: [config.CRM_PASSWORD]
   };
 
   const startedAt = new Date().toISOString();
@@ -93,8 +105,7 @@ export async function runLeadsMvp(options: { headed?: boolean; refreshOnly?: boo
       results.push(await executeScenario(scenario, state));
     }
   } finally {
-    const tracePath = path.join(process.cwd(), "artifacts", "traces", `${runId}.zip`);
-    await context.tracing.stop({ path: tracePath }).catch(() => {});
+    await context.tracing.stop({ path: state.tracePath }).catch(() => {});
     await browser.close();
   }
   const cleanup = registry.reconcile();
@@ -131,6 +142,16 @@ const refreshScenarioIds = new Set([
   "LEAD-018", "LEAD-019", "LEAD-023", "LEAD-024", "LEAD-026", "LEAD-054", "LEAD-055"
 ]);
 
+const createLeadNetworkExpectation: ExpectedNetworkAction = {
+  actionName: "leads.create",
+  urlPattern: /\/api\/v1\/leads(?:[/?]|$)/,
+  excludeUrlPattern: /\/api\/v1\/leads\/search(?:\?|$)/,
+  methods: ["POST"],
+  expectedStatusMin: 200,
+  expectedStatusMax: 299,
+  timeoutMs: 4_000
+};
+
 async function executeScenario(
   scenario: LeadsScenarioDefinition,
   state: RunnerState
@@ -142,6 +163,8 @@ async function executeScenario(
   try {
     if (scenario.mutation && state.access !== "mutation-allowed") {
       outcome = blocked("Mutation gate did not pass; scenario downgraded to read-only.");
+    } else if (dependsOnCreatedLeadFixture(scenario.id) && state.fixtureCreateFailure) {
+      outcome = dependencyBlocked(state.fixtureCreateFailure);
     } else {
       outcome = await runScenarioLogic(scenario.id, state);
     }
@@ -163,6 +186,9 @@ async function executeScenario(
     endedAt: new Date(ended).toISOString(),
     durationMs: ended - started,
     browser: state.recorder.since(mark),
+    tracePath: state.tracePath,
+    ...(outcome.matchedNetwork ? { matchedNetwork: outcome.matchedNetwork } : {}),
+    ...(outcome.validationMessages ? { validationMessages: outcome.validationMessages } : {}),
     ...(fs.existsSync(screenshotPath) ? { screenshotPath } : {})
   };
   const required = outcome.oracles.map((oracle) => oracle.oracle);
@@ -173,7 +199,7 @@ async function executeScenario(
     oracles: outcome.oracles,
     screenshots: evidence.screenshotPath ? [evidence.screenshotPath] : []
   }, required);
-  return {
+  const result: ScenarioExecutionResult = {
     id: scenario.id,
     title: scenario.title,
     status: outcome.status,
@@ -186,8 +212,11 @@ async function executeScenario(
     evidence,
     verification,
     riskScore: scenario.riskScore,
-    releaseImpact: outcome.releaseImpact ?? (outcome.status === "Pass" ? "None" : "Requires review")
+    releaseImpact: outcome.releaseImpact ?? (outcome.status === "Pass" ? "None" : "Requires review"),
+    ...(outcome.dependency ? { dependency: outcome.dependency } : {})
   };
+  if (scenario.id === "LEAD-006" && result.status !== "Pass") state.fixtureCreateFailure = result;
+  return result;
 }
 
 async function runScenarioLogic(id: string, state: RunnerState): Promise<ScenarioOutcome> {
@@ -284,9 +313,51 @@ async function invalidField(state: RunnerState, kind: "mobile" | "email"): Promi
 
 async function createLead(state: RunnerState): Promise<ScenarioOutcome> {
   await state.leads.fillLead(state.fixture);
-  await state.leads.saveLead();
+  const matchedNetwork = await captureActionNetwork(
+    state.page,
+    createLeadNetworkExpectation,
+    () => state.leads.clickSaveLead(),
+    state.secrets
+  );
+  const saveOutcome = await state.leads.observeSaveOutcome();
+  const validationMessages = saveOutcome.validationMessages.map((message) => redactText(message, state.secrets));
+  const networkPassed = matchedNetwork.matched && networkEvidenceSucceeded(matchedNetwork, createLeadNetworkExpectation);
+  if (saveOutcome.state !== "closed") {
+    return {
+      status: "Blocked",
+      category: "Automation Blocker",
+      severity: "Medium",
+      actual: validationMessages.length > 0
+        ? `Add Lead save did not close the drawer. Visible validation/form cues: ${validationMessages.join(" | ")}.`
+        : `Add Lead save did not close the drawer and no ${createLeadNetworkExpectation.actionName} response was observed.`,
+      expected: "A valid QA-prefixed lead can be saved, the drawer closes, and a create network response is captured.",
+      oracles: [
+        { oracle: "ui", status: "not-observed", detail: "Add Lead drawer remained open." },
+        { oracle: "network", status: matchedNetwork.matched ? "fail" : "not-observed", detail: networkSummary(matchedNetwork) }
+      ],
+      matchedNetwork: [matchedNetwork],
+      validationMessages,
+      releaseImpact: "Fixture creation blocked; dependent lifecycle scenarios are dependency-blocked."
+    };
+  }
+  if (!networkPassed) {
+    return {
+      status: "Blocked",
+      category: "Automation Blocker",
+      severity: "Medium",
+      actual: `Lead create UI closed, but action-scoped create response was not successful: ${networkSummary(matchedNetwork)}.`,
+      expected: "Lead creation requires a successful action-scoped backend response.",
+      oracles: [
+        { oracle: "ui", status: "pass", detail: "Add Lead drawer closed." },
+        { oracle: "network", status: matchedNetwork.matched ? "fail" : "not-observed", detail: networkSummary(matchedNetwork) }
+      ],
+      matchedNetwork: [matchedNetwork],
+      validationMessages,
+      releaseImpact: "Fixture creation blocked; dependent lifecycle scenarios are dependency-blocked."
+    };
+  }
   await state.leads.search(state.fixture.name);
-  const visible = await state.leads.hasText(state.fixture.name);
+  const visible = await state.leads.hasLeadRow(state.fixture);
   state.registry.add({
     entityType: "lead", uiIdentifier: state.fixture.name, createdByRun: true,
     currentState: "inbox"
@@ -294,19 +365,24 @@ async function createLead(state: RunnerState): Promise<ScenarioOutcome> {
   await state.page.reload();
   await state.leads.table.waitFor();
   await state.leads.search(state.fixture.name);
-  const persisted = await state.leads.hasText(state.fixture.name);
-  const networkOk = state.recorder.snapshot().network.some((entry) => entry.status && entry.status < 400);
+  const persisted = await state.leads.hasLeadRow(state.fixture);
   return visible && persisted
     ? {
       status: "Pass", category: "Functional", actual: `Created ${state.fixture.name}; visible after search and reload.`,
       oracles: [
         { oracle: "ui", status: "pass", detail: "Created row visible." },
-        { oracle: "network", status: networkOk ? "pass" : "not-observed", detail: networkOk ? "Successful XHR/fetch observed." : "No successful mutation response was correlated." },
+        { oracle: "network", status: "pass", detail: networkSummary(matchedNetwork) },
         { oracle: "persistence", status: "pass", detail: "Record survived browser reload." },
         { oracle: "search-table", status: "pass", detail: "Record found by search." }
-      ]
+      ],
+      matchedNetwork: [matchedNetwork],
+      validationMessages
     }
-    : fail("Lead was not consistently visible after creation/search/reload.", "Data Integrity Issue", ["ui", "persistence", "search-table"]);
+    : {
+      ...fail("Lead was not consistently visible after creation/search/reload.", "Data Integrity Issue", ["ui", "persistence", "search-table"]),
+      matchedNetwork: [matchedNetwork],
+      validationMessages
+    };
 }
 
 async function searchCase(state: RunnerState, value: string): Promise<ScenarioOutcome> {
@@ -320,9 +396,8 @@ async function detailObservation(state: RunnerState): Promise<ScenarioOutcome> {
   await state.leads.open(state.baseUrl);
   const targetFixture = searchableFixture(state);
   await state.leads.search(targetFixture.name);
-  const target = state.page.getByText(targetFixture.company, { exact: true });
-  if (!await target.count()) return blocked("A stable lead row is unavailable for detail inspection.");
-  await target.click();
+  if (!await state.leads.hasLeadRow(targetFixture)) return blocked("A stable lead row is unavailable for detail inspection.");
+  await state.leads.openLeadDetail(targetFixture);
   const body = await state.page.locator("body").innerText();
   const found = /Details|History|Focus|Activity|Note/i.test(body);
   await state.page.keyboard.press("Escape").catch(() => {});
@@ -505,6 +580,20 @@ function blocked(actual: string): ScenarioOutcome {
   };
 }
 
+function dependencyBlocked(dependency: ScenarioExecutionResult): ScenarioOutcome {
+  const reason = `Depends on ${dependency.id}: ${dependency.actual}`;
+  return {
+    status: "Blocked",
+    category: "Dependency Blocker",
+    severity: "Medium",
+    actual: reason,
+    expected: "Fixture-dependent scenario runs only after the prerequisite lead fixture is created.",
+    oracles: [{ oracle: "ui", status: "not-observed", detail: reason }],
+    dependency: { scenarioId: dependency.id, reason },
+    releaseImpact: "Dependent coverage deferred until prerequisite fixture creation is stable."
+  };
+}
+
 function productConfirmation(actual: string): ScenarioOutcome {
   return {
     status: "Needs Product Confirmation", category: "Needs Product Confirmation", actual,
@@ -523,4 +612,9 @@ function searchableFixture(state: RunnerState): LeadFixture {
   return state.registry.all().some((entry) => entry.uiIdentifier === state.fixture.name)
     ? state.fixture
     : state.baseline;
+}
+
+function networkSummary(evidence: MatchedNetworkEvidence): string {
+  if (!evidence.matched) return evidence.error ?? `No ${evidence.actionName} network match.`;
+  return `${evidence.actionName}: ${evidence.method} ${evidence.status ?? evidence.failure ?? "unknown"} ${evidence.url} in ${evidence.durationMs}ms`;
 }

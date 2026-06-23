@@ -18,6 +18,8 @@ setup("authenticate dedicated QA account", async ({ page }) => {
     await new LoginPage(page, config).login();
   });
   await setup.step("Capture authentication state and environment markers", async () => {
+    await page.goto(new URL("/inbox", config.CRM_BASE_URL).toString());
+    await page.getByText(config.CRM_TENANT, { exact: true }).waitFor({ timeout: 20_000 }).catch(() => {});
     const observation = await observeEnvironment(page, config);
     writeEnvironmentObservation(observation);
     await page.context().storageState({ path: authStatePath });

@@ -6,6 +6,8 @@ export interface NetworkEvidence {
   url: string;
   status?: number;
   failure?: string;
+  durationMs?: number;
+  matchedAction?: string;
 }
 
 export interface BrowserEvidence {

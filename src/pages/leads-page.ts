@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import type { LeadFixture, ObservedControl } from "../leads/types.js";
+import type { LeadFixture, LeadSaveUiOutcome, ObservedControl } from "../leads/types.js";
 
 export class LeadsPage {
   readonly table: Locator;
@@ -72,10 +72,12 @@ export class LeadsPage {
     await dialog.getByPlaceholder("Enter Contact Number", { exact: true }).fill(fixture.mobile);
     await dialog.getByRole("textbox", { name: "Email", exact: true }).fill(fixture.email);
     await dialog.getByRole("textbox", { name: "Value", exact: true }).fill(fixture.value);
+    await this.fillCloseDateIfPresent(dialog);
     const tagInput = dialog.locator("input[cmdk-input]");
     await tagInput.click();
     await this.page.locator("[cmdk-item]").filter({ hasText: "HOT" }).first().click();
     await dialog.getByRole("heading", { name: "Add Lead", exact: true }).click({ force: true });
+    await this.selectFirstProductIfPresent(dialog);
     await dialog.getByPlaceholder("Select Source Channel Type", { exact: true }).click();
     await this.page.getByText("Website", { exact: true }).last().click();
     const owner = dialog.getByRole("combobox").filter({ hasText: "Select owner" });
@@ -84,9 +86,23 @@ export class LeadsPage {
     await dialog.getByRole("heading", { name: "Add Lead", exact: true }).click({ force: true });
   }
 
-  async saveLead(): Promise<void> {
+  async clickSaveLead(): Promise<void> {
     await this.page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
-    await expect(this.page.getByRole("dialog")).toBeHidden();
+  }
+
+  async saveLead(): Promise<LeadSaveUiOutcome> {
+    await this.clickSaveLead();
+    return this.observeSaveOutcome();
+  }
+
+  async observeSaveOutcome(timeoutMs = 5_000): Promise<LeadSaveUiOutcome> {
+    const dialog = this.page.getByRole("dialog");
+    const hidden = await dialog.waitFor({ state: "hidden", timeout: timeoutMs }).then(() => true).catch(() => false);
+    if (hidden) return { state: "closed", validationMessages: [] };
+    const validationMessages = await this.validationMessages();
+    return validationMessages.length > 0
+      ? { state: "validation-visible", validationMessages }
+      : { state: "still-open", validationMessages };
   }
 
   async search(value: string): Promise<void> {
@@ -105,7 +121,68 @@ export class LeadsPage {
     return (await this.table.getByText(value, { exact: false }).count()) > 0;
   }
 
+  rowByLead(fixture: Pick<LeadFixture, "name" | "company" | "email" | "mobile">): Locator {
+    const rows = this.table.getByRole("row").filter({ hasText: fixture.name });
+    return rows.filter({ hasText: fixture.company }).first();
+  }
+
+  async hasLeadRow(fixture: Pick<LeadFixture, "name" | "company" | "email" | "mobile">): Promise<boolean> {
+    return await this.rowByLead(fixture).count() > 0;
+  }
+
+  async openLeadDetail(fixture: Pick<LeadFixture, "name" | "company" | "email" | "mobile">): Promise<void> {
+    const row = this.rowByLead(fixture);
+    if (await row.count() === 0) throw new Error(`No deterministic row found for ${fixture.name}.`);
+    const preferredCell = row.getByRole("cell").filter({ hasText: fixture.company }).first();
+    if (await preferredCell.count() > 0) await preferredCell.click();
+    else await row.getByRole("cell").nth(1).click();
+  }
+
+  async validationMessages(): Promise<string[]> {
+    const dialog = this.page.getByRole("dialog");
+    if (await dialog.count() === 0 || !await dialog.isVisible().catch(() => false)) return [];
+    const explicitMessages = (await dialog.locator("[role='alert'], .text-red-500, .text-destructive, p").allTextContents())
+      .map((text) => text.replace(/\s+/g, " ").trim())
+      .filter((text) => text.length > 0 && text.length < 140 && /required|invalid|enter|must|valid/i.test(text));
+    return [...new Set(explicitMessages)].slice(0, 12);
+  }
+
   async screenshot(path: string): Promise<void> {
     await this.page.screenshot({ path, fullPage: true });
   }
+
+  private async fillCloseDateIfPresent(dialog: Locator): Promise<void> {
+    const closeDate = dialog.getByPlaceholder("DD/MM/YYYY").first();
+    if (await closeDate.count() === 0) return;
+    await closeDate.fill(formatDateForCrm(daysFromToday(7)));
+    await dialog.getByRole("heading", { name: "Add Lead", exact: true }).click({ force: true });
+  }
+
+  private async selectFirstProductIfPresent(dialog: Locator): Promise<void> {
+    const product = dialog.getByPlaceholder("Select Product", { exact: true }).first();
+    if (await product.count() === 0 || !await product.isVisible().catch(() => false)) return;
+    for (const name of ["pen", "cloth"]) {
+      await product.fill(name);
+      const option = this.page.getByText(name, { exact: true }).last();
+      if (await option.count() > 0 && await option.isVisible().catch(() => false)) {
+        await option.click();
+        await dialog.getByRole("heading", { name: "Add Lead", exact: true }).click({ force: true });
+        return;
+      }
+    }
+    await product.fill("");
+  }
+}
+
+function daysFromToday(days: number): Date {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function formatDateForCrm(date: Date): string {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = String(date.getFullYear());
+  return `${day}/${month}/${year}`;
 }

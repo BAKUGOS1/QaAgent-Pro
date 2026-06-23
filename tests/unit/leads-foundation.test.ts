@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import { leadsBlueprintRequirements } from "../../src/blueprint/leads-blueprint.js";
 import { createLeadFixture } from "../../src/data/lead-fixture.js";
 import { DeterministicActionRegistry } from "../../src/leads/action-registry.js";
+import { dependsOnCreatedLeadFixture, fixtureDependentScenarioIds } from "../../src/leads/dependencies.js";
 import { EntityRegistry } from "../../src/leads/entity-registry.js";
 import { leadsScenarios } from "../../src/leads/scenarios.js";
 
@@ -35,6 +36,15 @@ describe("Leads MVP contracts", () => {
     expect(fixture.name).toContain("QA_AGENT_");
     expect(fixture.email).toMatch(/@example\.com$/);
     expect(fixture.mobile).toMatch(/^9\d{9}$/);
+  });
+
+  test("maps fixture-dependent scenarios to LEAD-006 cascade handling", () => {
+    expect(dependsOnCreatedLeadFixture("LEAD-013")).toBe(true);
+    expect(dependsOnCreatedLeadFixture("LEAD-027")).toBe(true);
+    expect(dependsOnCreatedLeadFixture("LEAD-050")).toBe(true);
+    expect(dependsOnCreatedLeadFixture("LEAD-055")).toBe(true);
+    expect(dependsOnCreatedLeadFixture("LEAD-012")).toBe(false);
+    expect(fixtureDependentScenarioIds.size).toBeGreaterThanOrEqual(10);
   });
 });
 

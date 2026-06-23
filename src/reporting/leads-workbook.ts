@@ -25,8 +25,10 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
   const findingHeaders = [
     "Finding ID", "Module", "Scenario ID", "Issue", "Category", "Priority", "Status",
     "Steps", "Expected Result", "Actual Result", "Verification Attribution",
-    "Verification Confidence", "Risk Score", "Release Impact", "Screenshot"
+    "Verification Confidence", "Risk Score", "Release Impact", "Dependency",
+    "Action Network", "Validation Messages", "Trace", "Screenshot"
   ];
+  const screenshotColumnIndex = findingHeaders.length - 1;
 
   const writeFindings = (sheetName: string, rows: ScenarioExecutionResult[]) => {
     const sheet = sheets[sheetName];
@@ -37,7 +39,9 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
         `QAP-${scenario.id}`, "Leads", scenario.id, scenario.title, scenario.category,
         scenario.severity, scenario.status, scenario.steps, scenario.expected, scenario.actual,
         scenario.verification.attribution, scenario.verification.confidence, scenario.riskScore,
-        scenario.releaseImpact, scenario.evidence.screenshotPath ? "Embedded" : ""
+        scenario.releaseImpact, dependencySummary(scenario), matchedNetworkSummary(scenario),
+        scenario.evidence.validationMessages?.join(" | ") ?? "", scenario.evidence.tracePath ?? "",
+        scenario.evidence.screenshotPath ? "Embedded" : ""
       ]);
       if (scenario.evidence.screenshotPath && fs.existsSync(scenario.evidence.screenshotPath)) {
         const imageId = workbook.addImage({
@@ -45,7 +49,7 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
           extension: "png"
         });
         sheet.addImage(imageId, {
-          tl: { col: 14, row: index + 1 },
+          tl: { col: screenshotColumnIndex, row: index + 1 },
           ext: { width: 320, height: 180 }
         });
         sheet.getRow(index + 2).height = 140;
@@ -71,6 +75,7 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
     ["Passed", report.scenarios.filter((item) => item.status === "Pass").length],
     ["Failed", report.scenarios.filter((item) => item.status === "Fail").length],
     ["Blocked", report.scenarios.filter((item) => item.status === "Blocked").length],
+    ["Dependency Blockers", report.scenarios.filter((item) => item.category === "Dependency Blocker").length],
     ["Needs Product Confirmation", report.scenarios.filter((item) => item.status === "Needs Product Confirmation").length],
     ["Not Applicable", report.scenarios.filter((item) => item.status === "Not Applicable").length],
     ["Cleanup Failures", report.cleanup.filter((item) => item.status === "Cleanup Failed").length]
@@ -82,7 +87,7 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
   report.scenarios.filter((item) => item.status !== "Pass" && item.status !== "Not Applicable").forEach((item, index) => {
     backlog?.addRow([
       `QAP-NB-${String(index + 1).padStart(3, "0")}`, item.category,
-      `Resolve ${item.title.toLowerCase()}`, item.actual, "Leads",
+      `Resolve ${item.title.toLowerCase()}`, item.dependency ? dependencySummary(item) : item.actual, "Leads",
       item.severity === "Critical" ? "P0" : item.severity === "High" ? "P1" : "P2",
       item.expected, item.evidence.screenshotPath ?? item.id
     ]);
@@ -92,29 +97,33 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
   const execution = sheets["Test Execution"];
   execution?.addRow([
     "Scenario ID", "Title", "Status", "Risk Score", "Duration (ms)", "UI Oracle",
-    "Network Oracle", "Persistence Oracle", "Attribution", "Confidence", "Cleanup/Reconciliation"
+    "Network Oracle", "Persistence Oracle", "Attribution", "Confidence", "Dependency",
+    "Action Network", "Validation Messages", "Trace", "Cleanup/Reconciliation"
   ]);
   report.scenarios.forEach((item) => execution?.addRow([
     item.id, item.title, item.status, item.riskScore, item.evidence.durationMs,
     item.oracles.find((oracle) => oracle.oracle === "ui")?.status ?? "not-observed",
     item.oracles.find((oracle) => oracle.oracle === "network")?.status ?? "not-observed",
     item.oracles.find((oracle) => oracle.oracle === "persistence")?.status ?? "not-observed",
-    item.verification.attribution, item.verification.confidence,
+    item.verification.attribution, item.verification.confidence, dependencySummary(item),
+    matchedNetworkSummary(item), item.evidence.validationMessages?.join(" | ") ?? "",
+    item.evidence.tracePath ?? "",
     report.cleanup.find((cleanup) => cleanup.entity.uiIdentifier && item.actual.includes(cleanup.entity.uiIdentifier))?.status ?? ""
   ]));
   report.cleanup.forEach((cleanup) => execution?.addRow([
     "CLEANUP", cleanup.entity.uiIdentifier, cleanup.status, "", "", "", "", "",
-    "", "", cleanup.detail
+    "", "", "", "", "", "", cleanup.detail
   ]));
   if (execution) styleHeader(execution);
 
   const evidence = sheets["Evidence Log"];
-  evidence?.addRow(["Scenario ID", "Started", "Ended", "Screenshot", "Console Errors", "Page Errors", "Network Evidence", "Trace"]);
+  evidence?.addRow(["Scenario ID", "Started", "Ended", "Screenshot", "Console Errors", "Page Errors", "Network Evidence", "Matched Action Network", "Validation Messages", "Trace"]);
   report.scenarios.forEach((item) => evidence?.addRow([
     item.id, item.evidence.startedAt, item.evidence.endedAt, item.evidence.screenshotPath ?? "",
     item.evidence.browser.consoleErrors.join(" | "), item.evidence.browser.pageErrors.join(" | "),
     item.evidence.browser.network.map((entry) => `${entry.method} ${entry.status ?? entry.failure} ${entry.url}`).join(" | "),
-    ""
+    matchedNetworkSummary(item), item.evidence.validationMessages?.join(" | ") ?? "",
+    item.evidence.tracePath ?? ""
   ]));
   if (evidence) styleHeader(evidence);
 
@@ -140,6 +149,18 @@ export async function writeLeadsWorkbook(report: LeadsRunReport): Promise<void> 
   }
   fs.mkdirSync(path.dirname(report.reportPath), { recursive: true });
   await workbook.xlsx.writeFile(report.reportPath);
+}
+
+function dependencySummary(scenario: ScenarioExecutionResult): string {
+  return scenario.dependency ? `${scenario.dependency.scenarioId}: ${scenario.dependency.reason}` : "";
+}
+
+function matchedNetworkSummary(scenario: ScenarioExecutionResult): string {
+  return scenario.evidence.matchedNetwork?.map((entry) =>
+    entry.matched
+      ? `${entry.actionName} ${entry.method} ${entry.status ?? entry.failure ?? "unknown"} ${entry.url} ${entry.durationMs}ms`
+      : `${entry.actionName} not matched: ${entry.error ?? "timeout"} ${entry.durationMs}ms`
+  ).join(" | ") ?? "";
 }
 
 function columnLetter(column: number): string {
