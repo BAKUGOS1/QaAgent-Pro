@@ -30,3 +30,21 @@ export function redactValue(value: unknown, secrets: string[] = []): unknown {
   }
   return value;
 }
+
+export function redactHeaders(
+  headers: Record<string, string | string[] | undefined>,
+  secrets: string[] = []
+): Record<string, string | string[]> {
+  const redacted: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    if (sensitiveKeyPattern.test(key)) {
+      redacted[key] = REDACTED;
+    } else if (typeof value === "string") {
+      redacted[key] = redactText(value, secrets);
+    } else {
+      redacted[key] = value.map((entry) => redactText(entry, secrets));
+    }
+  }
+  return redacted;
+}

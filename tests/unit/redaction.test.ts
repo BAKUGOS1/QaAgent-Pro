@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { REDACTED, redactText, redactValue } from "../../src/shared/redaction.js";
+import { REDACTED, redactText, redactValue, redactHeaders } from "../../src/shared/redaction.js";
 
 describe("secret redaction", () => {
   test("redacts nested sensitive keys", () => {
@@ -22,3 +22,43 @@ describe("secret redaction", () => {
     expect(result).toContain(REDACTED);
   });
 });
+
+describe("redactHeaders", () => {
+  test("redacts sensitive header keys", () => {
+    const result = redactHeaders({
+      authorization: "Bearer secret-token",
+      cookie: "session=abc123",
+      "content-type": "application/json"
+    });
+    expect(result.authorization).toBe(REDACTED);
+    expect(result.cookie).toBe(REDACTED);
+    expect(result["content-type"]).toBe("application/json");
+  });
+
+  test("redacts custom secrets from non-sensitive header values", () => {
+    const result = redactHeaders(
+      { "x-custom": "my-secret-value is here" },
+      ["my-secret-value"]
+    );
+    expect(result["x-custom"]).not.toContain("my-secret-value");
+  });
+
+  test("handles array header values", () => {
+    const result = redactHeaders({
+      authorization: ["Bearer a", "Bearer b"],
+      "x-forwarded-for": ["1.2.3.4", "5.6.7.8"]
+    });
+    expect(result.authorization).toBe(REDACTED);
+    expect(result["x-forwarded-for"]).toEqual(["1.2.3.4", "5.6.7.8"]);
+  });
+
+  test("skips undefined values", () => {
+    const result = redactHeaders({
+      "x-present": "yes",
+      "x-missing": undefined
+    });
+    expect(Object.keys(result)).toEqual(["x-present"]);
+    expect(result["x-present"]).toBe("yes");
+  });
+});
+
