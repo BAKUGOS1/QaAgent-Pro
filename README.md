@@ -267,10 +267,13 @@ src/
 ├── data/          # Unique QA fixture factories
 ├── findings/      # Finding classification
 ├── human-qa/      # Missions, heuristics, risk, verification and release judgment
-├── leads/         # 56-case scenario catalog, runner, registry and contracts
+├── leads/         # 56-case scenario catalog, orchestrating runner, registry and contracts
 ├── pages/         # Playwright page objects
+├── playbooks/     # Modular scenario playbooks per domain
+│   └── leads/     # Edit, lifecycle, search, filters, quality, persistence, etc.
 ├── reporting/     # Excel workbook generation
-└── safety/        # Environment and action authorization
+├── safety/        # Environment and action authorization
+└── shared/        # Logging, redaction, and cross-cutting utilities
 ```
 
 Read the deeper [architecture](docs/architecture.md), [safety runbook](docs/safety-runbook.md), and [reference study](docs/reference-architecture-study.md).
@@ -292,7 +295,7 @@ The gate checks:
 - workbook creation/reopening and embedded images;
 - Playwright test discovery.
 
-Current local validation: **54 tests passing, 93%+ line coverage, zero npm audit vulnerabilities**.
+Current local validation: **61 tests passing, zero TypeScript errors, zero ESLint errors, zero npm audit vulnerabilities**.
 
 ## Research and inspiration
 
@@ -313,7 +316,10 @@ Exact reviewed revisions and licensing boundaries are documented in [docs/refere
 - [x] Human-QA mission/risk/verification layers
 - [x] Full 56-scenario Leads runner
 - [x] Auth, evidence, persistence and cleanup contracts
-- [ ] Stabilize CRM-owned test IDs and complete currently blocked lifecycle contracts
+- [x] Modular playbook architecture (edit, lifecycle, search, filters, quality, persistence)
+- [x] Lifecycle contracts: convert-to-deal, archive, read-only, unarchive, bulk archive
+- [x] Structured logging with secret redaction
+- [ ] Stabilize CRM-owned test IDs for currently blocked selectors
 - [ ] Deals pipeline and won/lost lifecycle
 - [ ] Activities and Products modules
 - [ ] Visual regression baselines
