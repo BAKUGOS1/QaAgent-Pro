@@ -1,7 +1,6 @@
 {
   "name": "qaagent-pro",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "type": "module",
   "description": "Deterministic, local-first TypeScript and Playwright QA framework for Zybra CRM.",
@@ -28,6 +27,19 @@
   "engines": {
     "node": ">=20"
   },
+  "main": "./dist/src/cli/index.js",
+  "bin": {
+    "qaagent-pro": "./dist/src/cli/index.js"
+  },
+  "files": [
+    "dist/src",
+    "dist/tests/e2e",
+    "playwright.config.ts",
+    ".env.example",
+    "config/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "qa": "tsx src/cli/index.ts",
     "qa:blueprint": "npm run qa -- --mode blueprint",
@@ -48,7 +60,9 @@
     "report:sample": "tsx scripts/generate-sample-report.ts",
     "verify:inputs": "tsx scripts/verify-product-inputs.ts",
     "scan:secrets": "tsx scripts/scan-secrets.ts",
-    "quality:gate": "tsx scripts/quality-gate.ts"
+    "quality:gate": "tsx scripts/quality-gate.ts",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "commander": "^14.0.2",

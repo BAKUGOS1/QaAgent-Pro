@@ -183,6 +183,37 @@ Blocked by default:
 
 Credentials, auth state, reports, screenshots, traces, and local run data are Git-ignored.
 
+## Install as CLI
+
+No need to clone the repository. Install globally or use `npx`:
+
+```bash
+npm install -g qaagent-pro       # install globally
+# or use npx for one-off runs:   npx qaagent-pro <command>
+```
+
+Set up a new project directory:
+
+```bash
+mkdir my-crm-qa && cd my-crm-qa
+qaagent-pro init                 # scaffolds .env, directories, sample mission
+npx playwright install chromium  # install browser
+```
+
+Fill in your CRM staging credentials in `.env`, then:
+
+```bash
+qaagent-pro check                # validate configuration
+qaagent-pro auth                 # login and save browser state
+qaagent-pro run leads            # execute all 56 scenarios
+qaagent-pro run leads --headed   # with visible browser
+qaagent-pro mission -f config/blueprint/sample-mission.json
+```
+
+The Excel report will be saved to `artifacts/reports/`.
+
+---
+
 ## Quick start
 
 ### Requirements
@@ -246,6 +277,20 @@ npm run qa:mission -- --file config/blueprint/sample-mission.json
 
 ## Commands
 
+### CLI (installed package)
+
+| Command | Purpose |
+|---|---|
+| `qaagent-pro init` | Scaffold `.env`, directories, and sample mission in the current directory |
+| `qaagent-pro check` | Validate environment configuration without exposing secrets |
+| `qaagent-pro auth` | Login and save local Playwright storage state |
+| `qaagent-pro run leads` | Execute all 56 Leads scenarios |
+| `qaagent-pro run leads --headed` | Execute with a visible browser window |
+| `qaagent-pro run leads --refresh-only` | Execute the refresh/persistence subset |
+| `qaagent-pro mission -f <path>` | Validate and compile a deterministic QA mission |
+
+### Development (cloned repository)
+
 | Command | Purpose |
 |---|---|
 | `npm run auth:setup` | Login and save local Playwright storage state |
@@ -256,6 +301,7 @@ npm run qa:mission -- --file config/blueprint/sample-mission.json
 | `npm run config:check` | Validate environment configuration without exposing secrets |
 | `npm run test:unit` | Run framework unit tests with coverage |
 | `npm run quality:gate` | Run the complete repository quality gate |
+| `npm run build` | Compile TypeScript to `dist/` |
 
 ## Architecture
 
