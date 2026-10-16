@@ -379,3 +379,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and follow th
 ## License
 
 MIT © 2026 QaAgent-Pro contributors.
+
+<!-- mohitstack-portfolio -->
+Built by [Mohit Kumar](https://mohitstack.vercel.app). [Project case study](https://mohitstack.vercel.app/work/qaagent-pro).
+<!-- /mohitstack-portfolio -->
